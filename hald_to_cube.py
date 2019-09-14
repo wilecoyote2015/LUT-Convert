@@ -2,66 +2,99 @@ from __future__ import print_function, division
 
 import math
 import sys
-from optparse import OptionParser
+import argparse
+import os
 
 from PIL import Image
 
 
 def main():
 
-    opt_parser = OptionParser(usage='%prog [options] input.png output.cube')
-    opts, args = opt_parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('input', help="Path to input file or input directory. "
+                                      "If directory, all files are converted recursively.")
+    parser.add_argument('output', help="Path to output file or directory, depending on whether input "
+                                       "is file or directory. If input is file and output is directory, output file"
+                                       " is named like input and placed in the output directory.")
+    parser.add_argument('--overwrite', help="overwrite existing output file(s)", action="store_true")
+    
+    args = parser.parse_args()
 
-    if len(args) != 2:
-        opt_parser.print_usage()
-        exit(1)
+    input = args.input
+    output = args.output
+    overwrite = args.overwrite
+    
+    if os.path.isdir(input):
+        if os.path.isdir(output) or not os.path.exists(output):
+            convert_directory(input, output, overwrite)
+        else:
+            raise ValueError("If input is directory, output must be directory, too.")
+    elif os.path.isfile(input):
+        convert_file(input, output, overwrite)
+    else:
+        raise ValueError("annot open input")
 
-    in_ = Image.open(args[0])
+def convert_directory(input, output, overwrite):
+    for dir_input, dirs, files in os.walk(input):
+        # get path relative to input directory
+        if dir_input != input:
+            dir_input_relative = os.path.relpath(dir_input, input)
+            
+            print(dir_input_relative)
+    
+            # construct the path in the output directory
+            dir_output = os.path.join(output, dir_input_relative)
+
+        else:
+            dir_output = output
+
+        # if directory does not exist, create it
+        if not os.path.exists(dir_output):
+            os.mkdir(dir_output)
+
+        # convert all files
+        for file in files:
+            filepath = os.path.join(dir_input, file)
+            convert_file(filepath, dir_output, overwrite)
+
+def convert_file(input, output, overwrite):
+    try:
+        in_ = Image.open(input)
+    except:
+        return
+    
+    if os.path.isdir(output):
+        filename = os.path.basename(input)
+        filename_no_extension = os.path.splitext(filename)[0]
+        file_output = os.path.join(output, '{}.cube'.format(filename_no_extension))
+    else:
+        file_output = output
+
+    if os.path.exists(file_output):
+        if overwrite:
+            os.remove(file_output)
+        else:
+            raise ValueError("Output file exists")
+
     w, h = in_.size
     if w != h:
         print('HALD input is not square.', file=sys.stderr)
-        exit(2)
+        return
+        
     steps = int(round(math.pow(w, 1/3)))
-    if steps ** 3 != w:
+    if steps**3 != w:
         print('HALD input size is invalid: %d is not a cube.' % w, file=sys.stderr)
 
     print('%d steps -> %d values' % (steps, steps**6), file=sys.stderr)
-    # Assume that we are going from 8 bits to 10.
 
-    out = open(args[1], 'w')
-    #out.write('#Created by: Adobe Photoshop CS6\n')
-    #out.write('#Copyright: Copyright 2012 Adobe Systems Inc.\n')
-    #out.write('TITLE "Testing"\n')
-    #out.write('\n')
-    #out.write('#LUT size\n')
+    out = open(file_output, 'w')
     out.write('LUT_3D_SIZE %d\n' % (steps ** 2))
-    #out.write('\n')
-    #out.write('#data domain\n')
     out.write('DOMAIN_MIN 0.0 0.0 0.0\n')
     out.write('DOMAIN_MAX 1.0 1.0 1.0\n')
-    #out.write('\n')
-    #out.write('#LUT data points\n')
 
-    if False:
-        steps1 = steps + 1
-        steps3 = steps ** 2 * (steps + 1)
-        steps5 = steps ** 4 * (steps + 1)
-        data = list(in_.getdata())
-        def lookup(ri, gi, bi):
-            return data[
-                ri * steps1 + gi * steps3 + bi * steps5
-            ]
-        for bi in xrange(steps):
-            for gi in xrange(steps):
-                for ri in xrange(steps):
-                    r, g, b = lookup(ri, gi, bi)[:3]
-                    out.write('%f %f %f\n' % (r / 255.0, g / 255.0, b / 255.0))
-    else:
-        for pixel in in_.getdata():
-            r, g, b = pixel[:3]
-            out.write('%f %f %f\n' % (r / 255.0, g / 255.0, b / 255.0))
-
-
+    for pixel in in_.getdata():
+        r, g, b = pixel[:3]
+        out.write('%f %f %f\n' % (r / 255.0, g / 255.0, b / 255.0))
 
 
 if __name__ == '__main__':
